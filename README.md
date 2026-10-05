@@ -1,0 +1,3 @@
+#Soccer Transfer Finder
+
+Data Sourcing: Originally scoped around FBref, but Opta terminated FBref's advanced-stats data feed in January 2026, removing passing/possession metrics league-wide. Evaluated StatsBomb's open data as an alternative, but its free release only covers select historical seasons, not a current full season. Settled on Understat for current-season per-90 and xG-based metrics, which better fit the player-similarity use case anyway.
