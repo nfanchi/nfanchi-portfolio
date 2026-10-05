@@ -1,4 +1,4 @@
-
+#Scraping FBref for Premier League data, ended up not working because of Cloudflare protections
 
 import soccerdata as sd
 
