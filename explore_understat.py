@@ -6,6 +6,7 @@ import pandas as pd
 # Pull the full 2025-26 Premier League season (completed, 38 matches)
 understat = sd.Understat(leagues="ENG-Premier League", seasons="2025-26")
 df = understat.read_player_season_stats()
+df = df.reset_index()
 
 print("Raw pull:", df.shape)
 
