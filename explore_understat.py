@@ -3,8 +3,16 @@
 import soccerdata as sd
 import pandas as pd
 
-# Pull the full 2025-26 Premier League season (completed, 38 matches)
-understat = sd.Understat(leagues="ENG-Premier League", seasons="2025-26")
+#Create list of European top 5 leagues 
+leagues = [
+    "ENG-Premier League",
+    "ESP-La Liga",
+    "GER-Bundesliga",
+    "ITA-Serie A",
+    "FRA-Ligue 1",
+]
+# Pull the full 2025-26 season for all specified leagues (completed, 38 matches)
+understat = sd.Understat(leagues=leagues, seasons="2025-26")
 df = understat.read_player_season_stats()
 df = df.reset_index()
 
