@@ -1,13 +1,11 @@
-import pandas as pd
 import difflib
+
+import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Load the per-90 features built in feature_engineering 
-df = pd.read_csv("data/player_features_p90.csv")
-
-#Taking out S from the positions because "Substitute" doesn't give me 
-#any real info in terms of actual matching players based on similarity
+# Load the dataset that now includes market values
+df = pd.read_csv("data/player_features_with_value.csv")
 df["position"] = df["position"].str.replace(" S", "").str.replace("S", "")
 
 feature_cols = [
@@ -17,40 +15,25 @@ feature_cols = [
 ]
 
 X = df[feature_cols]
-
-# Standardize so no single metric (e.g. shots_p90, which has bigger raw
-# values) dominates the distance calculation just because of its scale
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
-
-# Compute similarity between every player and every other player all at once
-# This produces a 340x340 matrix where cell [i, j] is how similar
-# player i is to player j (1.0 = identical profile, -1.0 = opposite).
 similarity_matrix = cosine_similarity(X_scaled)
-    
-#actual function for finding similar players
-def find_similar_players(player_name, top_n=5):
-    """Given a player's name, return their top_n most statistically
-    similar players based on per-90 attacking/creative output."""
- 
+
+
+def resolve_player_name(player_name):
+    """Same 3-level name matching as before: exact -> substring -> fuzzy.
+    Returns the resolved name, or None if no confident match is found."""
+
     all_names = df["player"].tolist()
- 
-    # Level 1: exact match, ignoring case
     exact = [n for n in all_names if n.lower() == player_name.lower()]
- 
-    # Level 2: the typed name appears somewhere inside a real name
-    # for example "Amad Diallo" matching "Amad Diallo Traore"
     contains = [n for n in all_names if player_name.lower() in n.lower()]
- 
-    # Level 3: no exact or substring match - suggest close spellings instead
-    # handles typos/accents like "Mohamed Salah" vs "Mohammed Salah"
     close = difflib.get_close_matches(player_name, all_names, n=5, cutoff=0.6)
- 
+
     if exact:
-        resolved_name = exact[0]
+        return exact[0]
     elif len(contains) == 1:
-        resolved_name = contains[0]
-        print(f"Interpreting '{player_name}' as '{resolved_name}'")
+        print(f"Interpreting '{player_name}' as '{contains[0]}'")
+        return contains[0]
     elif len(contains) > 1:
         print(f"'{player_name}' matches multiple players - be more specific:")
         for n in contains:
@@ -64,35 +47,62 @@ def find_similar_players(player_name, top_n=5):
     else:
         print(f"'{player_name}' not found, and no close matches either.")
         return None
- 
+
+
+def find_cheaper_alternative(player_name, top_n=5, pool_size=50):
+    """Find statistically similar players who are cheaper than the given
+    benchmark player, based on market value. Casts a wide similarity net
+    first (pool_size), then filters that pool down to affordable options,
+    then re-sorts by similarity."""
+
+    resolved_name = resolve_player_name(player_name)
+    if resolved_name is None:
+        return None
+
     player_idx = df.index[df["player"] == resolved_name].tolist()[0]
- 
-    # Pull this player's row out of the similarity matrix - it's their
-    # similarity score against every other player in the dataset
+    benchmark_value = df.loc[player_idx, "market_value_in_eur"]
+
+    if pd.isna(benchmark_value):
+        print(f"'{resolved_name}' has no known market value - can't filter by budget.")
+        return None
+
+    # Step 1: cast a wide net on pure statistical similarity
     scores = similarity_matrix[player_idx]
- 
-    results = df[["player", "team", "position"]].copy()
-    results["similarity"] = scores
- 
-    # Drop the player themselves (always 1.0, not a useful "match")
-    results = results[results["player"] != resolved_name]
- 
-    #added reset index at the end to just have it listed 1-5 instead of the default row number from pandas
-    results = results.sort_values("similarity", ascending=False).head(top_n).reset_index(drop=True)
-    results.index += 1
-    return results
+    pool = df[["player", "team", "position", "market_value_in_eur"]].copy()
+    pool["similarity"] = scores
+    pool = pool[pool["player"] != resolved_name]
+    pool = pool.sort_values("similarity", ascending=False).head(pool_size)
+
+    # Step 2: filter that pool down to players CHEAPER than the benchmark,
+    # and who actually have a known value (can't confirm "cheaper" for
+    # players with missing valuations, so they're excluded here)
+    affordable = pool[
+        pool["market_value_in_eur"].notna()
+        & (pool["market_value_in_eur"] < benchmark_value)
+    ]
+
+    if affordable.empty:
+        print(f"No cheaper statistically-similar players found in the top {pool_size}.")
+        return None
+
+    # Step 3: re-sort the affordable pool by similarity, return the best few
+    result = affordable.sort_values("similarity", ascending=False).head(top_n)
+    result = result.reset_index(drop=True)
+    result.index = result.index + 1
+
+    print(f"\nBenchmark: {resolved_name} (€{benchmark_value:,.0f})\n")
+    return result
 
 
-# Test, swap this name for any player in the dataset
 if __name__ == "__main__":
-    example = find_similar_players("amad dialo", top_n=5)
+    example = find_cheaper_alternative("Jude Bellingham", top_n=5)
 
-    #making column titles capitalized
     if example is not None:
         example_display = example.rename(columns={
             "player": "Player",
             "team": "Team",
             "position": "Position",
+            "market_value_in_eur": "Market Value (EUR)",
             "similarity": "Similarity",
         })
         print(example_display)
